@@ -106,7 +106,7 @@ class _MeshTransformViewState extends State<MeshTransformView> with SingleTicker
             padding: const EdgeInsets.all(24),
             child: Center(
               child: AspectRatio(
-                aspectRatio: 1,
+                aspectRatio: 1356 / 1943, // card.png native aspect
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(28),
