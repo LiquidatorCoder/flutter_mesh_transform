@@ -69,16 +69,18 @@ class _MeshTransformViewState extends State<MeshTransformView> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => setState(() => _active = !_active),
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: (1356 / 1943),
-          child: MeshTransform(
-            active: _active,
-            xSpread: _xSpread,
-            yFalloff: _yFalloff,
-            yTravel: _yTravel,
-            response: _response,
-            dampingRatio: _dampingRatio,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: MeshTransform(
+          active: _active,
+          xSpread: _xSpread,
+          yFalloff: _yFalloff,
+          yTravel: _yTravel,
+          response: _response,
+          dampingRatio: _dampingRatio,
+          padding: const EdgeInsets.fromLTRB(24, 160, 24, 40),
+          child: AspectRatio(
+            aspectRatio: (1356 / 1943),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
