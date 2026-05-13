@@ -89,8 +89,9 @@ class _MeshTransformViewState extends State<MeshTransformView>
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
-            final progress = _controller.value.clamp(0.0, 1.0);
-            final blur = progress * 20.0;
+            // Swift uses unclamped spring value — overshoot drives blur past
+            // its nominal max. Only clamp the floor so sigma stays >= 0.
+            final blur = (_controller.value * 20.0).clamp(0.0, double.infinity);
             final shader = _shader;
 
             final padded = Padding(
