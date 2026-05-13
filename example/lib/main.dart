@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'mesh_transform.dart';
+import 'package:flutter_mesh_transform/flutter_mesh_transform.dart';
 
 void main() => runApp(const MeshTransformApp());
 

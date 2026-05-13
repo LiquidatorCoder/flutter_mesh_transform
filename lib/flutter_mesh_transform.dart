@@ -17,7 +17,7 @@ class MeshTransform extends StatefulWidget {
     this.dampingRatio = 0.75,
     this.maxBlur = 20.0,
     this.padding = const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-    this.shaderAsset = 'shaders/distortion.frag',
+    this.shaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag',
   });
 
   final bool active;
