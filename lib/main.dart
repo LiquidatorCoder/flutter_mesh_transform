@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -11,10 +12,7 @@ class MeshTransformApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: MeshTransformView(),
-    );
+    return const MaterialApp(debugShowCheckedModeBanner: false, home: MeshTransformView());
   }
 }
 
@@ -23,12 +21,12 @@ const _backgroundBlue = Color.fromARGB(255, 222, 226, 240);
 // SwiftUI: Color(hue: 0.635, saturation: 0.674, brightness: 0.614)
 const _shadowBlue = Color.fromARGB(255, 51, 71, 157);
 
-// Wave SpringAnimator(dampingRatio: 0.75, response: 0.8)
-final _spring = SpringDescription(
-  mass: 1,
-  stiffness: 61.685, // (2π / 0.8)^2
-  damping: 11.78, // 2 * 0.75 * sqrt(61.685)
-);
+SpringDescription _springFrom({required double response, required double ratio}) {
+  // Wave's spring: stiffness = (2π/response)², damping = 4π·ratio/response.
+  final stiffness = math.pow(2 * math.pi / response, 2).toDouble();
+  final damping = 4 * math.pi * ratio / response;
+  return SpringDescription(mass: 1, stiffness: stiffness, damping: damping);
+}
 
 class MeshTransformView extends StatefulWidget {
   const MeshTransformView({super.key});
@@ -37,11 +35,19 @@ class MeshTransformView extends StatefulWidget {
   State<MeshTransformView> createState() => _MeshTransformViewState();
 }
 
-class _MeshTransformViewState extends State<MeshTransformView>
-    with SingleTickerProviderStateMixin {
+class _MeshTransformViewState extends State<MeshTransformView> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   double _target = 1;
   ui.FragmentShader? _shader;
+
+  // Warp shape
+  double _xSpread = 2.1;
+  double _yFalloff = 3.0;
+  double _yTravel = 1.1;
+
+  // Warp feel (spring)
+  double _response = 0.85;
+  double _dampingRatio = 0.75;
 
   @override
   void initState() {
@@ -58,7 +64,7 @@ class _MeshTransformViewState extends State<MeshTransformView>
   }
 
   void _animateTo(double target) {
-    final sim = SpringSimulation(_spring, _controller.value, target, 0);
+    final sim = SpringSimulation(_springFrom(response: _response, ratio: _dampingRatio), _controller.value, target, 0);
     _controller.animateWith(sim);
   }
 
@@ -75,76 +81,119 @@ class _MeshTransformViewState extends State<MeshTransformView>
 
   @override
   Widget build(BuildContext context) {
-    // Mirror of SwiftUI ContentView:
-    //   Image -> clip -> shadow -> padding(24) -> distortionEffect -> blur
-    // In Flutter that maps to:
-    //   ImageFiltered(blur, AnimatedSampler(shader, Padding(card with shadow+clip)))
-    // The sampler's child fills the screen so the warp's "boundingRect" is the
-    // screen, the shadow has room, and content can slide off-bottom.
     return Scaffold(
       backgroundColor: _backgroundBlue,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _toggle,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            // Swift uses unclamped spring value — overshoot drives blur past
-            // its nominal max. Only clamp the floor so sigma stays >= 0.
-            final blur = (_controller.value * 20.0).clamp(0.0, double.infinity);
-            final shader = _shader;
+      body: Stack(
+        children: [
+          Positioned.fill(child: _buildAnimation()),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildControls()),
+        ],
+      ),
+    );
+  }
 
-            final padded = Padding(
-              padding: const EdgeInsets.all(24),
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _shadowBlue.withValues(alpha: 0.15),
-                          blurRadius: 12,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: Image.asset('assets/card.png', fit: BoxFit.cover),
-                    ),
+  Widget _buildAnimation() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggle,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final blur = (_controller.value * 20.0).clamp(0.0, double.infinity);
+          final shader = _shader;
+
+          final padded = Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(color: _shadowBlue.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 8)),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset('assets/card.png', fit: BoxFit.cover),
                   ),
                 ),
               ),
-            );
+            ),
+          );
 
-            Widget content = SizedBox.expand(child: padded);
+          Widget content = SizedBox.expand(child: padded);
 
-            if (shader != null) {
-              content = AnimatedSampler(
-                (image, size, canvas) {
-                  shader
-                    ..setFloat(0, size.width)
-                    ..setFloat(1, size.height)
-                    ..setFloat(2, _controller.value)
-                    ..setImageSampler(0, image);
-                  canvas.drawRect(
-                    Offset.zero & size,
-                    Paint()..shader = shader,
-                  );
-                },
-                child: SizedBox.expand(child: padded),
-              );
-            }
+          if (shader != null) {
+            content = AnimatedSampler((image, size, canvas) {
+              shader
+                ..setFloat(0, size.width)
+                ..setFloat(1, size.height)
+                ..setFloat(2, _controller.value)
+                ..setFloat(3, _xSpread)
+                ..setFloat(4, _yFalloff)
+                ..setFloat(5, _yTravel)
+                ..setImageSampler(0, image);
+              canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+            }, child: SizedBox.expand(child: padded));
+          }
 
-            return ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-              child: content,
-            );
-          },
+          return ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: content,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildControls() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('warp shape', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            _slider('x-spread', _xSpread, 0, 3, (v) => setState(() => _xSpread = v)),
+            _slider('y-falloff', _yFalloff, 0.1, 4, (v) => setState(() => _yFalloff = v)),
+            _slider('y-travel', _yTravel, 0, 3, (v) => setState(() => _yTravel = v)),
+            const SizedBox(height: 4),
+            const Text('warp feel', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+            _slider('response', _response, 0.1, 2, (v) => setState(() => _response = v)),
+            _slider('damping', _dampingRatio, 0.1, 1.5, (v) => setState(() => _dampingRatio = v)),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        SizedBox(width: 72, child: Text(label, style: const TextStyle(fontSize: 11))),
+        Expanded(
+          child: Slider(value: value.clamp(min, max), min: min, max: max, onChanged: onChanged),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(
+            value.toStringAsFixed(2),
+            style: const TextStyle(fontSize: 11, fontFeatures: [FontFeature.tabularFigures()]),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
     );
   }
 }
