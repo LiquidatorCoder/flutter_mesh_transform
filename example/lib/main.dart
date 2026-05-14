@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -284,7 +285,12 @@ class _PaymentDemoState extends State<_PaymentDemo> with SingleTickerProviderSta
                 child: AnimatedBuilder(
                   animation: _streaks,
                   builder: (context, _) => CustomPaint(
-                    painter: _StreakPainter(t: _streaks.value, seeds: _streakSeeds, color: _cashGreen, reverse: _streaksReverse),
+                    painter: _StreakPainter(
+                      t: _streaks.value,
+                      seeds: _streakSeeds,
+                      color: _cashGreen,
+                      reverse: _streaksReverse,
+                    ),
                   ),
                 ),
               ),
@@ -439,6 +445,7 @@ class _GridDemo extends StatefulWidget {
 
 class _GridDemoState extends State<_GridDemo> {
   final Set<int> _active = {};
+  final List<Timer> _timers = [];
 
   static const _colors = [
     Color(0xFFEF4444),
@@ -449,53 +456,96 @@ class _GridDemoState extends State<_GridDemo> {
     Color(0xFFEC4899),
   ];
 
+  static const _stagger = Duration(milliseconds: 200);
+  static const _hold = Duration(milliseconds: 1200);
+
+  @override
+  void dispose() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    super.dispose();
+  }
+
+  void _playStagger() {
+    for (final t in _timers) {
+      t.cancel();
+    }
+    _timers.clear();
+    setState(_active.clear);
+
+    for (var i = 0; i < _colors.length; i++) {
+      final idx = i;
+      _timers.add(
+        Timer(_stagger * i, () {
+          if (!mounted) return;
+          setState(() => _active.add(idx));
+        }),
+      );
+      _timers.add(
+        Timer(_stagger * i + _hold, () {
+          if (!mounted) return;
+          setState(() => _active.remove(idx));
+        }),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
+    const spacing = 24.0;
+    const cols = 2;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: GridView.builder(
-          itemCount: _colors.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 24,
-            crossAxisSpacing: 24,
-          ),
-          itemBuilder: (context, i) {
-            final isOn = _active.contains(i);
-            return GestureDetector(
-              onTap: () => setState(() {
-                if (isOn) {
-                  _active.remove(i);
-                } else {
-                  _active.add(i);
-                }
-              }),
-              child: MeshTransform(
-                active: isOn,
-                xSpread: s.xSpread,
-                yFalloff: s.yFalloff,
-                yTravel: s.yTravel,
-                response: s.response,
-                dampingRatio: s.dampingRatio,
-                padding: const EdgeInsets.all(28),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _colors[i],
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(color: _colors[i].withValues(alpha: 0.4), blurRadius: 14, offset: const Offset(0, 6)),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tileW = (constraints.maxWidth - spacing * (cols - 1)) / cols;
+            final tileH = tileW;
+
+            return Stack(
+              children: [
+                for (var i = _colors.length - 1; i >= 0; i--)
+                  Positioned(
+                    left: (i % cols) * (tileW + spacing),
+                    top: 0,
+                    width: tileW,
+                    height: tileH + (i ~/ cols) * (tileH + spacing),
+                    child: GestureDetector(
+                      onTap: _playStagger,
+                      child: MeshTransform(
+                        active: _active.contains(i),
+                        xSpread: s.xSpread,
+                        yFalloff: s.yFalloff,
+                        yTravel: s.yTravel,
+                        response: s.response,
+                        dampingRatio: s.dampingRatio,
+                        padding: EdgeInsets.fromLTRB(28, (i ~/ cols) * (tileH + spacing), 28, 28),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _colors[i],
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _colors[i].withValues(alpha: 0.4),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${i + 1}',
+                              style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
+              ],
             );
           },
         ),
