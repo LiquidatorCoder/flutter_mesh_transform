@@ -5,6 +5,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
 
+/// A drop-in mesh distortion / warp effect for any Flutter widget.
+///
+/// Wrap any [child] with [MeshTransform] and flip [active] to animate the
+/// warp between 0 and 1 using a critically-tunable spring simulation. The
+/// distortion itself is rendered by a fragment shader bundled with this
+/// package.
+///
+/// ```dart
+/// MeshTransform(
+///   active: isOpen,
+///   child: YourWidget(),
+/// )
+/// ```
 class MeshTransform extends StatefulWidget {
   const MeshTransform({
     super.key,
@@ -20,22 +33,36 @@ class MeshTransform extends StatefulWidget {
     this.shaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag',
   });
 
+  /// When this flips, the warp animates between 0 (off) and 1 (fully warped).
   final bool active;
+
+  /// The widget to warp.
   final Widget child;
 
+  /// Horizontal warp width. Higher values spread the distortion further.
   final double xSpread;
+
+  /// How quickly the warp falls off vertically. Higher = tighter falloff.
   final double yFalloff;
+
+  /// Vertical displacement at peak warp.
   final double yTravel;
 
+  /// Spring response in seconds. Lower values are snappier.
   final double response;
+
+  /// Spring damping ratio. 1.0 is critical damping; below 1.0 overshoots.
   final double dampingRatio;
 
+  /// Peak blur sigma applied at `active == true`. Set to `0` to disable blur.
   final double maxBlur;
 
   /// Empty space around the child captured by the shader so the warp can
   /// extend past the child's bounds without clipping.
   final EdgeInsets padding;
 
+  /// Asset path of the fragment shader to use. Defaults to the bundled
+  /// distortion shader.
   final String shaderAsset;
 
   @override
@@ -66,12 +93,18 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
   }
 
   Future<void> _loadShader() async {
-    final program = await _programCache.putIfAbsent(
-      widget.shaderAsset,
-      () => ui.FragmentProgram.fromAsset(widget.shaderAsset),
-    );
-    if (!mounted) return;
-    setState(() => _shader = program.fragmentShader());
+    try {
+      final program = await _programCache.putIfAbsent(
+        widget.shaderAsset,
+        () => ui.FragmentProgram.fromAsset(widget.shaderAsset),
+      );
+      if (!mounted) return;
+      setState(() => _shader = program.fragmentShader());
+    } catch (_) {
+      // Shader asset missing or failed to compile — fall through and render
+      // the child without distortion rather than crashing the host app.
+      _programCache.remove(widget.shaderAsset);
+    }
   }
 
   void _animateTo(double target) {

@@ -44,4 +44,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-swift/*
+example/build/
+example/.dart_tool/
+example/ios/Pods/
+example/ios/.symlinks/
+example/macos/Pods/

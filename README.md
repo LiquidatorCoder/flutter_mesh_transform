@@ -52,6 +52,10 @@ The widget owns its spring controller and caches the compiled shader program acr
 | `maxBlur`      | `20.0`                                                 | Peak blur sigma at `active = true`. Set to `0` to disable.             |
 | `padding`      | `EdgeInsets.symmetric(vertical: 40, horizontal: 24)`   | Empty space around the child captured by the shader so it doesn't clip. |
 
+## 📱 Platforms
+
+Tested on **Android** and **iOS**. Should work anywhere Flutter's fragment shader pipeline is supported, but other platforms are unverified.
+
 ## 🚀 Example
 
 A runnable demo app with interactive sliders for every parameter lives in [`example/`](example/):
