@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_mesh_transform/flutter_mesh_transform.dart';
 
@@ -235,10 +237,36 @@ class _PaymentDemo extends StatefulWidget {
   State<_PaymentDemo> createState() => _PaymentDemoState();
 }
 
-class _PaymentDemoState extends State<_PaymentDemo> {
+class _PaymentDemoState extends State<_PaymentDemo> with SingleTickerProviderStateMixin {
   bool _sent = false;
+  bool _streaksReverse = false;
+  late final AnimationController _streaks;
+  late final List<_Streak> _streakSeeds;
 
   static const _cashGreen = Color(0xFFB5F265);
+
+  @override
+  void initState() {
+    super.initState();
+    _streaks = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _streakSeeds = List.generate(18, (i) => _Streak.seed(i));
+  }
+
+  @override
+  void dispose() {
+    _streaks.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    _streaksReverse = _sent; // tapping while sent → card returns, streaks fall
+    _streaks.forward(from: 0);
+    final delay = _streaks.duration! * 0.6;
+    Future.delayed(delay, () {
+      if (!mounted) return;
+      setState(() => _sent = !_sent);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -248,72 +276,155 @@ class _PaymentDemoState extends State<_PaymentDemo> {
       color: Colors.black,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _sent = !_sent),
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: MeshTransform(
-            active: _sent,
-            xSpread: s.xSpread,
-            yFalloff: s.yFalloff,
-            yTravel: s.yTravel,
-            response: s.response,
-            dampingRatio: s.dampingRatio,
-            padding: const EdgeInsets.fromLTRB(32, 220, 32, 80),
-            child: Container(
-              width: 280,
-              height: 320,
-              padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
-              decoration: BoxDecoration(color: _cashGreen, borderRadius: BorderRadius.circular(28)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Column(
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Color(0x11000000), Color(0x22000000)],
-                          ),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'K',
-                          style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 22),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Kristen Anderson',
-                        style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w500),
-                      ),
-                    ],
+        onTap: _toggle,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _streaks,
+                  builder: (context, _) => CustomPaint(
+                    painter: _StreakPainter(t: _streaks.value, seeds: _streakSeeds, color: _cashGreen, reverse: _streaksReverse),
                   ),
-                  const Text(
-                    '\$889',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 68,
-                      fontWeight: FontWeight.w700,
-                      height: 1,
-                      fontFeatures: [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                  const SizedBox.shrink(),
-                ],
+                ),
               ),
             ),
-          ),
+            Align(
+              alignment: Alignment.topCenter,
+              child: MeshTransform(
+                active: _sent,
+                xSpread: s.xSpread,
+                yFalloff: s.yFalloff,
+                yTravel: s.yTravel,
+                response: s.response,
+                dampingRatio: s.dampingRatio,
+                padding: const EdgeInsets.fromLTRB(32, 220, 32, 80),
+                child: Container(
+                  width: 280,
+                  height: 320,
+                  padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+                  decoration: BoxDecoration(color: _cashGreen, borderRadius: BorderRadius.circular(28)),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Column(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0x11000000), Color(0x22000000)],
+                              ),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Text(
+                              'K',
+                              style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700, fontSize: 22),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Kristen Anderson',
+                            style: TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.w500),
+                          ),
+                        ],
+                      ),
+                      const Text(
+                        '\$889',
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 68,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox.shrink(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+// Background streak particles for the payment-send animation.
+class _Streak {
+  _Streak.seed(int i)
+    : xFraction = ((i * 37 + 11) % 100) / 100,
+      speed = 0.6 + ((i * 53) % 100) / 100 * 0.8,
+      length = 24.0 + ((i * 17) % 80),
+      startDelay = ((i * 13) % 100) / 100 * 0.35,
+      thickness = 1.2 + ((i * 7) % 10) / 10;
+
+  final double xFraction;
+  final double speed;
+  final double length;
+  final double startDelay;
+  final double thickness;
+}
+
+class _StreakPainter extends CustomPainter {
+  _StreakPainter({required this.t, required this.seeds, required this.color, this.reverse = false});
+  final double t;
+  final List<_Streak> seeds;
+  final Color color;
+  final bool reverse;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (t <= 0 || t >= 1) return;
+    for (final s in seeds) {
+      final local = (t - s.startDelay) / (1.0 - s.startDelay);
+      if (local <= 0 || local >= 1) continue;
+
+      final travel = size.height + s.length + 80;
+      final x = s.xFraction * size.width;
+      // Forward: streak head moves bottom → top. Reverse: top → bottom.
+      // The streak's gradient always trails behind the head (head bright, tail fades).
+      final double headY;
+      final double tailY;
+      if (reverse) {
+        headY = -s.length + local * travel * s.speed;
+        tailY = headY - s.length; // tail above the head as it descends
+      } else {
+        headY = size.height + s.length - local * travel * s.speed;
+        tailY = headY + s.length; // tail below the head as it rises
+      }
+
+      double alpha;
+      if (local < 0.1) {
+        alpha = local / 0.2;
+      } else if (local > 0.7) {
+        alpha = (1 - local) / 0.3;
+      } else {
+        alpha = 1.0;
+      }
+      alpha = alpha.clamp(0.0, 1.0) * 0.55;
+
+      final paint = Paint()
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = s.thickness
+        ..shader = ui.Gradient.linear(Offset(x, headY), Offset(x, tailY), [
+          color.withValues(alpha: alpha),
+          color.withValues(alpha: 0),
+        ]);
+      canvas.drawLine(Offset(x, headY), Offset(x, tailY), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StreakPainter old) => old.t != t || old.reverse != reverse;
 }
 
 // ─── Tab 3: grid of independent instances ─────────────────────────────
