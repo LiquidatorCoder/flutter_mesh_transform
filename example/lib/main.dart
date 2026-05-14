@@ -6,12 +6,6 @@ import 'package:flutter_mesh_transform/flutter_mesh_transform.dart';
 
 void main() => runApp(const MeshTransformApp());
 
-const _backgroundDark = Color(0xFF0E1116);
-const _surfaceDark = Color(0xFF1C1F26);
-const _accentBlue = Color(0xFF7C8CFF);
-// kept for the card-demo drop shadow tint
-const _shadowBlue = Color.fromARGB(255, 51, 71, 157);
-
 class WarpSettings {
   const WarpSettings({
     this.xSpread = 2.1,
@@ -45,12 +39,7 @@ class MeshTransformApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: _backgroundDark,
-        colorScheme: const ColorScheme.dark(surface: _surfaceDark, primary: _accentBlue, secondary: _accentBlue),
-        useMaterial3: true,
-      ),
+      darkTheme: ThemeData(brightness: Brightness.dark, useMaterial3: true),
       home: const _MeshTransformHome(),
     );
   }
@@ -71,7 +60,7 @@ class _MeshTransformHomeState extends State<_MeshTransformHome> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: _backgroundDark,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: TabBarView(
           physics: const NeverScrollableScrollPhysics(),
           children: [
@@ -84,14 +73,14 @@ class _MeshTransformHomeState extends State<_MeshTransformHome> {
         bottomNavigationBar: Material(
           color: Colors.transparent,
           child: TabBar(
-            labelColor: _accentBlue,
+            labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Colors.white12,
             dividerColor: Colors.transparent,
             indicatorColor: Colors.black,
             tabs: [
-              Tab(text: 'card', icon: Icon(Icons.image_outlined)),
-              Tab(text: 'pay', icon: Icon(Icons.send_outlined)),
-              Tab(text: 'grid', icon: Icon(Icons.grid_view_outlined)),
+              Tab(text: 'card'),
+              Tab(text: 'pay'),
+              Tab(text: 'grid'),
             ],
           ),
         ),
@@ -129,8 +118,8 @@ class _ControlsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
-      decoration: const BoxDecoration(
-        color: _surfaceDark,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
       ),
       child: Column(
@@ -189,7 +178,7 @@ class _CardDemo extends StatefulWidget {
 }
 
 class _CardDemoState extends State<_CardDemo> {
-  bool _active = true;
+  bool _active = false;
 
   @override
   Widget build(BuildContext context) {
@@ -207,25 +196,101 @@ class _CardDemoState extends State<_CardDemo> {
           response: s.response,
           dampingRatio: s.dampingRatio,
           padding: const EdgeInsets.fromLTRB(24, 160, 24, 40),
-          child: AspectRatio(
-            aspectRatio: 1356 / 1943,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(color: _shadowBlue.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 8)),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Image.asset('assets/card.png', fit: BoxFit.cover),
-              ),
-            ),
-          ),
+          child: AspectRatio(aspectRatio: 1356 / 1943, child: const _MeshCard()),
         ),
       ),
     );
   }
+}
+
+class _MeshCard extends StatelessWidget {
+  const _MeshCard();
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.onSurface,
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  child: CustomPaint(painter: _CardArtPainter()),
+                ),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              'Abhay Maurya',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontSize: 32,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'MESH TRANSFORM',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2.4,
+              ),
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CardArtPainter extends CustomPainter {
+  const _CardArtPainter();
+
+  // Triangles in normalized [0..1] coords, painted in order with given alpha.
+  static const _tris = <(double, double, double, double, double, double, double)>[
+    // (x1,y1,x2,y2,x3,y3, alpha)
+    (0.00, 0.00, 0.55, 0.95, 0.32, 0.00, 0.25),
+    (1.00, 0.00, 0.45, 1.00, 0.70, 0.00, 0.22),
+    (0.00, 0.55, 0.62, 1.00, 0.00, 1.00, 0.18),
+    (1.00, 0.45, 1.00, 1.00, 0.55, 1.00, 0.20),
+    (0.20, 0.40, 0.80, 0.45, 0.50, 0.80, 0.30),
+    (0.00, 0.05, 0.25, 0.55, 0.05, 0.65, 0.18),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    for (final t in _tris) {
+      final path = Path()
+        ..moveTo(t.$1 * w, t.$2 * h)
+        ..lineTo(t.$3 * w, t.$4 * h)
+        ..lineTo(t.$5 * w, t.$6 * h)
+        ..close();
+      canvas.drawPath(path, Paint()..color = Colors.white.withValues(alpha: t.$7));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CardArtPainter old) => false;
 }
 
 // ─── Tab 2: payment send ──────────────────────────────────────────────
@@ -498,8 +563,9 @@ class _GridDemoState extends State<_GridDemo> {
     const cols = 2;
 
     return SafeArea(
+      top: false,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final tileW = (constraints.maxWidth - spacing * (cols - 1)) / cols;
@@ -512,7 +578,7 @@ class _GridDemoState extends State<_GridDemo> {
                     left: (i % cols) * (tileW + spacing),
                     top: 0,
                     width: tileW,
-                    height: tileH + (i ~/ cols) * (tileH + spacing),
+                    height: (tileH + (i ~/ cols) * (tileH + spacing)) + MediaQuery.paddingOf(context).top + 16,
                     child: GestureDetector(
                       onTap: _playStagger,
                       child: MeshTransform(
@@ -522,7 +588,12 @@ class _GridDemoState extends State<_GridDemo> {
                         yTravel: s.yTravel,
                         response: s.response,
                         dampingRatio: s.dampingRatio,
-                        padding: EdgeInsets.fromLTRB(28, (i ~/ cols) * (tileH + spacing), 28, 28),
+                        padding: EdgeInsets.fromLTRB(
+                          28,
+                          ((i ~/ cols) * (tileH + spacing)) + MediaQuery.paddingOf(context).top + 16,
+                          28,
+                          28,
+                        ),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: _colors[i],
