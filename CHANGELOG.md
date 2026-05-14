@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Use absolute GitHub raw URLs for demo GIFs in README so they render on pub.dev.
+
 ## 0.1.0
 
 - Initial release.

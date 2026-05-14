@@ -13,9 +13,9 @@ Driven by a spring simulation and a fragment shader — flip a <code>bool</code>
 </p>
 
 <p align="center">
-  <img src="demo/1.gif" alt="Mesh transform demo 1" width="30%" />
-  <img src="demo/2.gif" alt="Mesh transform demo 2" width="30%" />
-  <img src="demo/3.gif" alt="Mesh transform demo 3" width="30%" />
+  <img src="https://raw.githubusercontent.com/LiquidatorCoder/flutter_mesh_transform/main/demo/1.gif" alt="Mesh transform demo 1" width="30%" />
+  <img src="https://raw.githubusercontent.com/LiquidatorCoder/flutter_mesh_transform/main/demo/2.gif" alt="Mesh transform demo 2" width="30%" />
+  <img src="https://raw.githubusercontent.com/LiquidatorCoder/flutter_mesh_transform/main/demo/3.gif" alt="Mesh transform demo 3" width="30%" />
 </p>
 
 ---
