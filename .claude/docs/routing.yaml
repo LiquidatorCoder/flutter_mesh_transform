@@ -1,0 +1,202 @@
+# flutter_mesh_transform — verification routing policy
+#
+# The human-readable statement of the policy whose executable form lives in
+# tool/harness/lib/classify.mjs (tiers, lock resources, fingerprint excludes) and
+# tool/harness/lib/reviewpolicy.mjs (review modes).
+#
+# LOCKSTEP: this file is NOT parsed at runtime. Node has no built-in YAML parser and
+# this is a Dart package with no YAML dependency, so duplicating the policy here is a
+# deliberate trade: readable policy, at the cost of having to change both files
+# together. Both this file and those two modules are listed in POLICY_FILES, so editing
+# either changes the verification policy fingerprint and invalidates every existing
+# verify.json — drift is loud, not silent.
+#
+# Everything below was derived by inspecting THIS repo. Nothing is inherited from
+# another project's conventions.
+
+repo:
+  name: flutter_mesh_transform
+  kind: dart-flutter-package            # published to pub.dev; version 0.1.1
+  shape: |
+    One public widget (MeshTransform) in a single file, lib/flutter_mesh_transform.dart,
+    whose visible behaviour is produced by a GLSL fragment shader,
+    shaders/distortion.frag, bundled via pubspec.yaml's `flutter: shaders:` block and
+    animated by a SpringSimulation. example/ is a demo app (publish_to: none) with
+    ios/android/macos directories that belong to it, not to the package.
+  toolchain:
+    flutter: ">=3.24.0"                 # pubspec environment:; local Flutter 3.44.3
+    dart_sdk: "^3.11.1"                 # local Dart 3.12.2
+    lints: flutter_lints ^6.0.0         # via analysis_options.yaml
+  absent:
+    # Recorded so nobody wires a verifier check to something that does not exist here.
+    - no CI workflows (.github/ does not exist)
+    - no Makefile, no script runner
+    - no code generation (no build_runner, no generated files)
+    - no native platform code owned by the package
+    - no network, credential, persistence or signing surface
+
+# --- Verification tiers ---------------------------------------------------------------
+# Implemented by tool/harness/verify. Every command named here is real and was run
+# during bootstrap.
+tiers:
+  fast:
+    checks: [format, analyze, shader_contract]
+    intent: everything cheap enough to run constantly; seconds.
+  normal:
+    checks: [format, analyze, shader_contract, test, shader_compile]
+    intent: adds the widget-test suite and the only build that actually compiles the shader.
+  full:
+    checks: [format, analyze, shader_contract, test, shader_compile, publish_dry_run]
+    intent: adds the pub.dev release gate.
+
+checks:
+  format:
+    cmd: dart format --output=none --set-exit-if-changed .
+  analyze:
+    cmd: flutter analyze
+    note: |
+      Covers lib/, test/ AND example/ — confirmed during bootstrap by planting a type
+      error in example/lib and watching the ROOT analyze run report it. A separate
+      example-scoped analyze would be redundant and is deliberately not wired up.
+  shader_contract:
+    cmd: (in-process) tool/harness/lib/shadercontract.mjs
+    note: |
+      Structural check that shaders/distortion.frag and lib/flutter_mesh_transform.dart
+      agree on the number of float uniform slots and samplers, and that every slot is
+      written. Uniforms are addressed BY INDEX from Dart, so a reorder or an addition on
+      one side is otherwise invisible. Proves counts and coverage only — NOT that the
+      right value reaches the right slot.
+  test:
+    cmd: flutter test
+    note: |
+      Real, and small: one file, two widget tests. Neither exercises the shader (
+      FragmentProgram.fromAsset does not load under flutter_test, so both run the
+      no-shader fallback path), the spring simulation, or any constructor tunable. A
+      green `test` is not coverage of the warp.
+  shader_compile:
+    cmd: flutter build bundle          # run in example/
+    note: |
+      The ONLY command in this repo that runs distortion.frag through the shader
+      compiler. Confirmed during bootstrap: appending invalid GLSL made it exit 1, while
+      analyze and test stayed green. Writes to the shared example/build/ — see the
+      example-build lock resource.
+  publish_dry_run:
+    cmd: flutter pub publish --dry-run
+
+# --- Classification: changed path -> required tier -------------------------------------
+# First match wins. Mirrors RULES in tool/harness/lib/classify.mjs.
+classification:
+  - match: "shaders/**"
+    tier: full
+    why: >
+      the fragment shader IS the product; its uniforms are index-coupled to
+      lib/flutter_mesh_transform.dart, it is compiled only by a real bundle build, and a
+      load failure is swallowed by _loadShader()'s catch — a break here is silent at
+      every other layer.
+  - match: "lib/flutter_mesh_transform.dart"
+    tier: full
+    why: >
+      the entire public API in one file: every constructor default is a visual contract
+      with consumers, it holds the setFloat/setImageSampler side of the shader uniform
+      contract, and its default shaderAsset hardcodes the literal package name.
+  - match: "pubspec.yaml"
+    tier: full
+    why: >
+      the published version, the SDK/Flutter constraints, and the `flutter: shaders:`
+      declaration without which the shader is not bundled at all.
+  - match: "CHANGELOG.md"
+    tier: full
+    why: part of the pub.dev release artifact, changed together with the version.
+  - match: "LICENSE"
+    tier: full
+    why: distribution terms of the published archive; pub validates its presence.
+  - match: "lib/**"
+    tier: normal
+    why: package implementation consumed by real apps (the floor for anything added beside the single public file).
+  - match: "test/**"
+    tier: normal
+    why: a change to a test changes what passing means — the suite must actually run.
+  - match: "analysis_options.yaml"
+    tier: normal
+    why: the flutter_lints rule set; re-scopes every analyze run, example/ included.
+  - match: "README.md"
+    tier: normal
+    why: >
+      shipped in the pub.dev archive and rendered on the package page; 0.1.1 was
+      released for nothing but broken demo-GIF URLs in it.
+  - match: "tool/harness/**"
+    tier: normal
+    why: verifier, gate and shader-contract logic.
+  - match: ".claude/docs/routing.yaml"
+    tier: normal
+    why: verification policy.
+  - match: "AGENTS.md"
+    tier: normal
+    why: the rules agents work from.
+  - match: "example/**"
+    tier: fast
+    why: the demo app (publish_to; none); already covered by the root analyze.
+  - match: "demo/**"
+    tier: fast
+    why: README media, referenced by absolute GitHub raw URL rather than a path pub validates.
+  - match: "docs/**"
+    tier: fast
+    why: agent-facing documentation; not shipped in the archive.
+  - match: ".claude/tasks/**"
+    tier: fast
+    why: task bookkeeping.
+  - match: "*"
+    tier: fast
+    why: default floor — nothing here is verification-exempt.
+
+# --- Independent review ----------------------------------------------------------------
+# Mirrors RELEASE_PATH_PATTERNS in tool/harness/lib/reviewpolicy.mjs. Review is OPTIONAL
+# in this repo: it gates only the shader contract and the release path, because those are
+# the only two ways this package affects anyone outside the checkout.
+review:
+  default_mode: none
+  reviewer_model: gpt-5.6-sol          # pinned in tool/harness/review
+  paths:
+    - match: "shaders/**"
+      mode: standard
+      why: an index-coupled uniform change still compiles, still analyses clean, still passes the tests, and renders wrong.
+    - match: "lib/flutter_mesh_transform.dart"
+      mode: standard
+      why: the whole public API surface, plus the Dart half of that same shader contract.
+    - match: "pubspec.yaml"
+      mode: standard
+      why: version, constraints, and whether the shader ships at all.
+    - match: "LICENSE"
+      mode: standard
+      why: distribution terms of a published artifact.
+
+# --- Shared resources ------------------------------------------------------------------
+lock_resources:
+  - name: dependency-resolution
+    why: "`flutter pub get`, which rewrites BOTH tracked pubspec.lock files."
+  - name: repo-format
+    why: "`dart format .` rewrites files across the tree."
+  - name: example-build
+    why: "the shader_compile check writes into the shared example/build/."
+  - name: release
+    why: "`flutter pub publish`."
+# Deliberately absent: `codegen` (no build_runner here) and any device/simulator pool
+# (nothing in this repo runs on a device).
+
+# --- Fingerprint exclusions -------------------------------------------------------------
+fingerprint_exclude_prefixes:
+  - ".claude/tasks/"
+  - ".claude/worktrees/"
+  - ".dart_tool/"
+  - "build/"
+  - "example/.dart_tool/"
+  - "example/build/"
+  - "coverage/"
+  - "pubspec.lock"           # see note
+  - "example/pubspec.lock"   # see note
+# NOTE on the two lockfiles: both are TRACKED in git, and every Flutter command the
+# verifier runs implicitly runs `pub get`, which rewrites them whenever a transitive
+# dependency has a newer allowed version. Verifying therefore dirties the tree by itself.
+# Fingerprinting them would make every verify.json stale the instant it was written.
+# Excluding them is not a licence to ignore a deliberate dependency bump: pubspec.yaml is
+# a full-tier path and is fingerprinted normally.

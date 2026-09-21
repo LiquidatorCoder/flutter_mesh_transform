@@ -12,6 +12,13 @@
 .swiftpm/
 migrate_working_dir/
 
+# Claude harness — per-checkout task state (see .claude/tasks/README.md).
+# Task directories and the active-task pointer are working state, not repo content.
+.claude/tasks/*
+!.claude/tasks/README.md
+!.claude/tasks/_template/
+.claude/worktrees/
+
 # IntelliJ related
 *.iml
 *.ipr

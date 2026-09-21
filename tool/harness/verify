@@ -1,0 +1,323 @@
+#!/usr/bin/env node
+// flutter_mesh_transform's deterministic verifier.
+//
+// Thin shim: all generic machinery (diffing, fingerprints, root resolution) comes from
+// the shared harness runtime at ~/.claude/harness/runtime/lib/. Everything repo-specific
+// — which commands exist, which tier runs which — lives here and in lib/classify.mjs.
+//
+// Contract (docs/agents/verification.md):
+//   tool/harness/verify <fast|normal|full> [--base <ref>] [--files a b ...]
+//                                          [--json-out <path>] [--quiet]
+//
+// Exit 0 only when result === "passed". Exit 1 otherwise (failed or incomplete).
+//
+// THE RULE: a check is reported "passed" only if its command actually ran and actually
+// exited zero. A check that could not run is "skipped" AND is listed in
+// unsatisfied_required, which makes the whole run "incomplete" — never "passed". There
+// is no code path here that writes a pass for a command it did not execute. Do not add
+// one.
+
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const SCHEMA_VERSION = 3;
+
+const here = dirname(fileURLToPath(import.meta.url));
+const RUNTIME_LIB = process.env.CLAUDE_HARNESS_RUNTIME || join(homedir(), ".claude", "harness", "runtime", "lib");
+
+async function loadRuntime(name) {
+  const path = join(RUNTIME_LIB, name);
+  if (!existsSync(path)) {
+    process.stderr.write(
+      `tool/harness/verify: harness runtime module not found: ${path}\n` +
+        `The shared runtime (~/.claude/harness/runtime/) is missing or moved. Set\n` +
+        `CLAUDE_HARNESS_RUNTIME to its lib/ directory, or reinstall the harness.\n`,
+    );
+    process.exit(2);
+  }
+  return import(pathToFileURL(path).href);
+}
+
+function parseArgs(argv) {
+  const out = { tier: null, base: undefined, files: undefined, jsonOut: null, quiet: false };
+  const rest = [...argv];
+  while (rest.length > 0) {
+    const a = rest.shift();
+    if (a === "--base") out.base = rest.shift();
+    else if (a === "--json-out") out.jsonOut = rest.shift();
+    else if (a === "--quiet") out.quiet = true;
+    else if (a === "--files") {
+      out.files = [];
+      while (rest.length > 0 && !rest[0].startsWith("--")) out.files.push(rest.shift());
+    } else if (a === "-h" || a === "--help") {
+      process.stdout.write("usage: tool/harness/verify <fast|normal|full> [--base <ref>] [--files <p>...] [--json-out <path>] [--quiet]\n");
+      process.exit(0);
+    } else if (a.startsWith("-")) {
+      process.stderr.write(`tool/harness/verify: unknown flag ${a}\n`);
+      process.exit(2);
+    } else if (out.tier === null) out.tier = a;
+    else {
+      process.stderr.write(`tool/harness/verify: unexpected argument ${a}\n`);
+      process.exit(2);
+    }
+  }
+  return out;
+}
+
+// --- The repo's actual commands ------------------------------------------------------
+// Every entry names a real command that exists in this repo's toolchain. flutter_mesh_
+// transform has NO CI workflow, NO Makefile and NO script runner, so these come from the
+// Dart/Flutter toolchain directly — AGENTS.md records that provenance.
+//
+// Two decisions specific to this repo, both established by testing rather than assumed:
+//
+//   * There is no separate `example_analyze` check. The root `flutter analyze` already
+//     analyses example/ (verified by planting a type error in example/lib and watching
+//     the root run report it). A second, scoped analyze would be redundant.
+//   * `shader_compile` builds the example app's asset bundle because that is the ONLY
+//     command in this repo that actually compiles shaders/distortion.frag — `flutter
+//     analyze` and `flutter test` never touch it. Verified by appending garbage to the
+//     .frag and watching `flutter build bundle` exit 1.
+//
+// `available` returns null when the check can run, or a human reason string when it
+// genuinely cannot — that reason is what lands in unsatisfied_required.
+
+function hasDartTestFiles(cwd) {
+  const root = join(cwd, "test");
+  if (!existsSync(root)) return false;
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      const abs = join(dir, name);
+      let st;
+      try {
+        st = statSync(abs);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) stack.push(abs);
+      else if (name.endsWith("_test.dart")) return true;
+    }
+  }
+  return false;
+}
+
+function toolOnPath(bin) {
+  const r = spawnSync("command", ["-v", bin], { shell: true, encoding: "utf8" });
+  return r.status === 0;
+}
+
+const SHADER_PATH = "shaders/distortion.frag";
+const PUBLIC_API_PATH = "lib/flutter_mesh_transform.dart";
+
+const CHECKS = {
+  format: {
+    cmd: ["dart", ["format", "--output=none", "--set-exit-if-changed", "."]],
+    description: "dart format --output=none --set-exit-if-changed .",
+    available: () => (toolOnPath("dart") ? null : "the `dart` CLI is not on PATH"),
+  },
+  analyze: {
+    // Covers lib/, test/ AND example/ — see the note above.
+    cmd: ["flutter", ["analyze"]],
+    description: "flutter analyze",
+    available: () => (toolOnPath("flutter") ? null : "the `flutter` CLI is not on PATH"),
+  },
+  shader_contract: {
+    // In-process, not a subprocess: the shader/Dart uniform index contract. Costs
+    // milliseconds and catches this repo's one silent-failure mode, so it runs in every
+    // tier including fast. See lib/shadercontract.mjs for exactly what it does and does
+    // NOT prove.
+    inProcess: true,
+    description: `uniform index contract: ${SHADER_PATH} <-> ${PUBLIC_API_PATH}`,
+    available: (cwd) => {
+      if (!existsSync(join(cwd, SHADER_PATH))) return `${SHADER_PATH} is absent`;
+      if (!existsSync(join(cwd, PUBLIC_API_PATH))) return `${PUBLIC_API_PATH} is absent`;
+      return null;
+    },
+    run: async (cwd) => {
+      const { checkShaderContract } = await import(pathToFileURL(join(here, "lib", "shadercontract.mjs")).href);
+      const r = checkShaderContract({ cwd, shaderPath: SHADER_PATH, dartPath: PUBLIC_API_PATH });
+      return { ok: r.ok, output: r.ok ? r.detail : r.reason };
+    },
+  },
+  test: {
+    // The flutter_test suite. It is REAL but small (one file, two widget tests) and it
+    // covers none of the shader path, none of the spring simulation and none of the
+    // constructor tunables — FragmentProgram.fromAsset does not load under flutter_test,
+    // so every test here exercises the no-shader fallback. docs/agents/verification.md
+    // states this plainly; do not read a green `test` as coverage of the warp.
+    cmd: ["flutter", ["test"]],
+    description: "flutter test",
+    available: (cwd) => {
+      if (!toolOnPath("flutter")) return "the `flutter` CLI is not on PATH";
+      if (!hasDartTestFiles(cwd)) return "no test files: no *_test.dart found under test/";
+      return null;
+    },
+  },
+  shader_compile: {
+    // The only command in this repo that runs the shader through impellerc.
+    cmd: ["flutter", ["build", "bundle"]],
+    subdir: "example",
+    description: "flutter build bundle (in example/) — compiles shaders/distortion.frag",
+    available: (cwd) => {
+      if (!toolOnPath("flutter")) return "the `flutter` CLI is not on PATH";
+      if (!existsSync(join(cwd, "example", "pubspec.yaml"))) return "example/pubspec.yaml is absent";
+      if (!existsSync(join(cwd, SHADER_PATH))) return `${SHADER_PATH} is absent`;
+      return null;
+    },
+  },
+  publish_dry_run: {
+    // The pub.dev release gate.
+    cmd: ["flutter", ["pub", "publish", "--dry-run"]],
+    description: "flutter pub publish --dry-run",
+    available: () => (toolOnPath("flutter") ? null : "the `flutter` CLI is not on PATH"),
+  },
+};
+
+const TIER_CHECKS = {
+  fast: ["format", "analyze", "shader_contract"],
+  normal: ["format", "analyze", "shader_contract", "test", "shader_compile"],
+  full: ["format", "analyze", "shader_contract", "test", "shader_compile", "publish_dry_run"],
+};
+
+const CHECK_TIMEOUT_MS = 15 * 60 * 1000;
+
+function truncate(s, n = 4000) {
+  const t = (s ?? "").trimEnd();
+  return t.length <= n ? t : `${t.slice(0, n)}\n...[truncated ${t.length - n} chars]`;
+}
+
+async function runCheck(name, cwd, quiet) {
+  const spec = CHECKS[name];
+  const unavailable = spec.available(cwd);
+  if (unavailable) {
+    return { name, description: spec.description, status: "skipped", required: true, exit_code: null, duration_ms: 0, detail: unavailable };
+  }
+
+  const startedAt = Date.now();
+
+  if (spec.inProcess) {
+    let r;
+    try {
+      r = await spec.run(cwd);
+    } catch (e) {
+      // A checker that threw did not run to a verdict. "Could not run" is never a pass.
+      const duration = Date.now() - startedAt;
+      return { name, description: spec.description, status: "skipped", required: true, exit_code: null, duration_ms: duration, detail: `could not run: ${e?.message ?? e}` };
+    }
+    const duration = Date.now() - startedAt;
+    const status = r.ok ? "passed" : "failed";
+    if (!quiet) process.stdout.write(`  ${status === "passed" ? "PASS" : "FAIL"}  ${name}  (${spec.description}, ${duration}ms)\n`);
+    return { name, description: spec.description, status, required: true, exit_code: r.ok ? 0 : 1, duration_ms: duration, detail: r.ok ? "" : truncate(r.output) };
+  }
+
+  const runCwd = spec.subdir ? join(cwd, spec.subdir) : cwd;
+  const [bin, args] = spec.cmd;
+  const r = spawnSync(bin, args, { cwd: runCwd, encoding: "utf8", timeout: CHECK_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+  const duration = Date.now() - startedAt;
+  const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+
+  // Spawn failure or timeout is "could not run", not "failed" — an honest distinction:
+  // it is not evidence the code is wrong, and it must not be reported as a pass either.
+  if (r.error || r.signal) {
+    const reason = r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM" ? `timed out after ${CHECK_TIMEOUT_MS}ms` : `could not run: ${r.error?.message ?? `killed by ${r.signal}`}`;
+    return { name, description: spec.description, status: "skipped", required: true, exit_code: null, duration_ms: duration, detail: reason };
+  }
+  const status = r.status === 0 ? "passed" : "failed";
+  if (!quiet) process.stdout.write(`  ${status === "passed" ? "PASS" : "FAIL"}  ${name}  (${spec.description}, ${duration}ms)\n`);
+  return { name, description: spec.description, status, required: true, exit_code: r.status, duration_ms: duration, detail: status === "passed" ? "" : truncate(output) };
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (!TIER_CHECKS[opts.tier]) {
+    process.stderr.write(`tool/harness/verify: tier must be one of fast, normal, full (got ${opts.tier === null ? "nothing" : `"${opts.tier}"`})\n`);
+    process.exit(2);
+  }
+
+  const { resolveWorktreeRoot } = await loadRuntime("reporoot.mjs");
+  const { computeDiff, computeHead } = await loadRuntime("diff.mjs");
+  const { workspaceFingerprint, policyFingerprint } = await loadRuntime("fingerprint.mjs");
+  const { classifyChanges, POLICY_FILES, FINGERPRINT_EXCLUDE_PREFIXES } = await import(pathToFileURL(join(here, "lib", "classify.mjs")).href);
+
+  const rooted = resolveWorktreeRoot({ cwd: process.cwd() });
+  if (!rooted.ok) {
+    process.stderr.write(`tool/harness/verify: ${rooted.reason}\n`);
+    process.exit(2);
+  }
+  const cwd = rooted.root;
+
+  // computeDiff returns entries ({path, status, oldPath?}), not bare paths: the
+  // fingerprint needs the entries, the classifier needs the paths.
+  const diff = computeDiff({ cwd, baseRefArg: opts.base, filesOverride: opts.files });
+  const changedEntries = diff.changedFiles ?? [];
+  const changedPaths = changedEntries.map((e) => e.path);
+  const { requiredTier, reasons } = classifyChanges(changedPaths);
+
+  const scope = opts.files ? { mode: "files", base: opts.base ?? null, files: opts.files } : opts.base ? { mode: "base", base: opts.base, files: null } : { mode: "default", base: null, files: null };
+
+  if (!opts.quiet) {
+    process.stdout.write(`verify ${opts.tier} — ${changedEntries.length} changed file(s), classifier requires "${requiredTier}"\n`);
+    if (reasons.length > 0 && requiredTier !== "fast") {
+      for (const r of reasons.slice(0, 5)) process.stdout.write(`  ${requiredTier} because ${r.path}: ${r.why}\n`);
+    }
+  }
+
+  const checks = [];
+  for (const name of TIER_CHECKS[opts.tier]) checks.push(await runCheck(name, cwd, opts.quiet));
+
+  const unsatisfiedRequired = checks.filter((c) => c.required && c.status === "skipped").map((c) => ({ check: c.name, reason: c.detail }));
+  const anyFailed = checks.some((c) => c.status === "failed");
+  const result = anyFailed ? "failed" : unsatisfiedRequired.length > 0 ? "incomplete" : "passed";
+
+  const artifact = {
+    schema_version: SCHEMA_VERSION,
+    tier: opts.tier,
+    result,
+    completion_tier_satisfied: result === "passed",
+    unsatisfied_required: unsatisfiedRequired,
+    required_tier: requiredTier,
+    verification_policy_fingerprint: policyFingerprint({ cwd, policyFiles: POLICY_FILES }),
+    workspace_fingerprint: workspaceFingerprint({ cwd, changedFiles: changedEntries, excludePrefixes: FINGERPRINT_EXCLUDE_PREFIXES }),
+    verification_scope: scope,
+    base: diff.base,
+    verified_at_commit: computeHead({ cwd }),
+    changed_files: changedEntries,
+    checks,
+    generated_by: "tool/harness/verify",
+    generated_at: new Date().toISOString(),
+  };
+
+  if (opts.jsonOut) {
+    mkdirSync(dirname(opts.jsonOut), { recursive: true });
+    writeFileSync(opts.jsonOut, `${JSON.stringify(artifact, null, 2)}\n`);
+  }
+
+  if (!opts.quiet) {
+    process.stdout.write(`\nresult: ${result}  (tier ${opts.tier}, required ${requiredTier})\n`);
+    for (const u of unsatisfiedRequired) process.stdout.write(`  did not run: ${u.check} — ${u.reason}\n`);
+    for (const c of checks.filter((x) => x.status === "failed")) {
+      process.stdout.write(`\n--- ${c.name} failed (exit ${c.exit_code}) ---\n${c.detail}\n`);
+    }
+    if (opts.jsonOut) process.stdout.write(`\nartifact: ${opts.jsonOut}\n`);
+  } else {
+    process.stdout.write(`${JSON.stringify(artifact)}\n`);
+  }
+
+  process.exit(result === "passed" ? 0 : 1);
+}
+
+main().catch((e) => {
+  process.stderr.write(`tool/harness/verify: ${e?.stack ?? e}\n`);
+  process.exit(2);
+});
