@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "adapter_api": 1,
+  "requires_core": ">=2.0.0 <3.0.0",
+  "name": "flutter_mesh_transform",
+  "integration_branch": "main",
+  "verification": {
+    "policy_files": ["analysis_options.yaml", ".claude/docs/routing.yaml"],
+    "fingerprint_exclude": [
+      ".dart_tool/",
+      "build/",
+      "example/.dart_tool/",
+      "example/build/",
+      "coverage/",
+      "pubspec.lock",
+      "example/pubspec.lock"
+    ],
+    "checks": {
+      "format": {
+        "cmd": ["dart", "format", "--output=none", "--set-exit-if-changed", "."],
+        "description": "dart format --output=none --set-exit-if-changed .",
+        "requires_tool": "dart"
+      },
+      "analyze": {
+        "cmd": ["flutter", "analyze"],
+        "description": "flutter analyze",
+        "requires_tool": "flutter"
+      },
+      "test": {
+        "cmd": ["flutter", "test"],
+        "description": "flutter test",
+        "requires_tool": "flutter",
+        "requires_test_glob": { "dir": "test", "pattern": "_test\\.dart$" }
+      },
+      "shader_compile": {
+        "cmd": ["flutter", "build", "bundle"],
+        "description": "flutter build bundle (in example/) — compiles shaders/distortion.frag",
+        "subdir": "example",
+        "requires_tool": "flutter",
+        "requires_file": ["example/pubspec.yaml", "shaders/distortion.frag"]
+      },
+      "publish_dry_run": {
+        "cmd": ["flutter", "pub", "publish", "--dry-run"],
+        "description": "flutter pub publish --dry-run",
+        "requires_tool": "flutter"
+      }
+    },
+    "tiers": {
+      "fast": ["format", "analyze"],
+      "normal": ["format", "analyze", "test", "shader_compile"],
+      "full": ["format", "analyze", "test", "shader_compile", "publish_dry_run"]
+    }
+  },
+  "risk": {
+    "rules": [
+      { "match": "shaders/**", "tier": "full", "why": "the fragment shader IS the product; its uniforms are index-coupled to lib/flutter_mesh_transform.dart, it is compiled only by a real bundle build, and a load failure is swallowed by _loadShader()'s catch — so a break here is silent at every other layer" },
+      { "match": "lib/flutter_mesh_transform.dart", "tier": "full", "why": "the entire public API in one file: every constructor default is a visual contract with consumers, it holds the setFloat/setImageSampler side of the shader uniform contract, and its default shaderAsset hardcodes the literal package name 'flutter_mesh_transform'" },
+      { "match": "pubspec.yaml", "tier": "full", "why": "the published version, the SDK/Flutter constraints, and the `flutter: shaders:` declaration without which the shader is not bundled at all — and the package name that the default shaderAsset path hardcodes" },
+      { "match": "CHANGELOG.md", "tier": "full", "why": "part of the pub.dev release artifact, changed together with the version" },
+      { "match": "LICENSE", "tier": "full", "why": "distribution terms of the published archive; pub validates its presence" },
+      { "match": "lib/**", "tier": "normal", "why": "package implementation consumed by real apps (today lib/ holds only the single public file above; this is the floor for anything added beside it)" },
+      { "match": "test/**", "tier": "normal", "why": "a change to a test changes what passing means — the suite must actually run" },
+      { "match": "analysis_options.yaml", "tier": "normal", "why": "the flutter_lints rule set; a change here re-scopes every analyze run in the repo, example/ included" },
+      { "match": "README.md", "tier": "normal", "why": "shipped in the pub.dev archive and rendered on the package page; 0.1.1 was released for nothing but broken demo-GIF URLs in it" },
+      { "match": "tool/harness/**", "tier": "normal", "why": "verifier, gate and shader-contract logic" },
+      { "match": ".claude/docs/routing.yaml", "tier": "normal", "why": "verification policy" },
+      { "match": "AGENTS.md", "tier": "normal", "why": "the rules agents work from" },
+      { "match": "example/**", "tier": "fast", "why": "the demo app (publish_to: none); not depended on by lib/, and already covered by the root `flutter analyze`, which analyses example/ too" },
+      { "match": "demo/**", "tier": "fast", "why": "README media, referenced by absolute GitHub raw URL rather than by a path pub validates" },
+      { "match": "docs/**", "tier": "fast", "why": "agent-facing documentation; not shipped in the archive" },
+      { "match": ".claude/tasks/**", "tier": "fast", "why": "task bookkeeping" },
+      { "match": "*", "tier": "fast", "why": "default floor — nothing here is verification-exempt" }
+    ]
+  },
+  "review": {
+    "wired": true,
+    "default_mode": "none",
+    "rules": [
+      { "match": "shaders/**", "mode": "standard", "why": "the fragment shader's uniform block is addressed by index from Dart; a reorder or an added uniform still compiles, still analyses clean, still passes the tests, and renders wrong" },
+      { "match": "lib/flutter_mesh_transform.dart", "mode": "standard", "why": "the whole public API surface — every constructor default is a visual contract with consumers — and the setFloat/setImageSampler half of that same shader contract" },
+      { "match": "pubspec.yaml", "mode": "standard", "why": "version, SDK/Flutter constraints, and the `flutter: shaders:` declaration that decides whether the shader ships at all" },
+      { "match": "LICENSE", "mode": "standard", "why": "distribution terms of a published artifact" }
+    ],
+    "preamble": [
+      "flutter_mesh_transform is a published Flutter package (pub.dev): one widget,",
+      "MeshTransform, that warps any child via a GLSL fragment shader driven by a spring",
+      "simulation. The whole public API is the single file lib/flutter_mesh_transform.dart.",
+      "",
+      "Review the diff below for correctness and for anything that would break a downstream",
+      "consumer. The specific hazard in this repo, which nothing in its toolchain catches:",
+      "",
+      "  * shaders/distortion.frag's uniforms are addressed BY INDEX from Dart",
+      "    (setFloat(0..n), setImageSampler(0)). Adding, removing, reordering or widening a",
+      "    uniform without the matching Dart change still compiles, still analyses clean and",
+      "    still passes the widget tests — and renders wrong.",
+      "  * _loadShader() swallows every failure in `catch (_)` and renders the child",
+      "    undistorted, so a broken shader produces no crash and no log.",
+      "  * flutter_test never loads the shader, so no existing test covers any of the above.",
+      "",
+      "Also check: changed constructor defaults (each is a visual contract with consumers),",
+      "the hardcoded default shaderAsset path 'packages/flutter_mesh_transform/shaders/",
+      "distortion.frag' against pubspec.yaml's package name, the `flutter: shaders:`",
+      "declaration, and version/CHANGELOG consistency. The `example/` app is a demo, not a",
+      "product."
+    ],
+    "generated": ["\\.(g|freezed|config|gr|mocks)\\.dart$"],
+    "policy_files": [".claude/docs/routing.yaml"]
+  },
+  "locks": ["dependency-resolution", "repo-format", "example-build", "release"],
+  "native": {}
+}
