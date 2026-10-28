@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
 
+const String _bundledShaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag';
+
 /// A drop-in mesh distortion / warp effect for any Flutter widget.
 ///
 /// Wrap any [child] with [MeshTransform] and flip [active] to animate the
@@ -30,7 +32,7 @@ class MeshTransform extends StatefulWidget {
     this.dampingRatio = 0.75,
     this.maxBlur = 20.0,
     this.padding = const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-    this.shaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag',
+    this.shaderAsset = _bundledShaderAsset,
   });
 
   /// When this flips, the warp animates between 0 (off) and 1 (fully warped).
@@ -63,7 +65,7 @@ class MeshTransform extends StatefulWidget {
   final EdgeInsets padding;
 
   /// Asset path of the fragment shader to use. Defaults to the bundled
-  /// distortion shader.
+  /// distortion shader. The idle and fully-warped-hide optimizations apply only to the bundled shader.
   final String shaderAsset;
 
   @override
@@ -125,7 +127,11 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
     final stiffness = math.pow(2 * math.pi / widget.response, 2).toDouble();
     final damping = 4 * math.pi * widget.dampingRatio / widget.response;
     final spring = SpringDescription(mass: 1, stiffness: stiffness, damping: damping);
-    _controller.animateWith(SpringSimulation(spring, _controller.value, target, _controller.velocity, snapToEnd: true));
+    // `then` fires only on natural completion, not when a newer animateWith supersedes this one. The spring ends
+    // within its tolerance of the target, so snap exactly (SpringSimulation.snapToEnd needs Flutter 3.29+).
+    _controller.animateWith(SpringSimulation(spring, _controller.value, target, _controller.velocity)).then((_) {
+      if (mounted && !_controller.isAnimating) _controller.value = target;
+    });
   }
 
   @override
@@ -144,9 +150,11 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
         final t = _controller.value;
         final shader = _shader;
 
-        final atRest = t == 0;
+        // Both shortcuts assume the bundled shader (identity at t == 0, distortion.frag's vertical sampling).
+        final bundled = widget.shaderAsset == _bundledShaderAsset;
+        final atRest = bundled && t == 0;
         // Without a shader the fallback is the blurred, undistorted child, which is never fully hidden.
-        final hidden = shader != null && _isFullyWarpedAway(t, widget.yTravel);
+        final hidden = bundled && shader != null && _isFullyWarpedAway(t, widget.yTravel);
         final blur = atRest || hidden ? 0.0 : (t * widget.maxBlur).clamp(0.0, double.infinity);
 
         // The wrapper structure is identical every frame (only the flags change) so the child's element subtree and
