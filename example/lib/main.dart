@@ -255,10 +255,11 @@ class _CardDemoState extends State<_CardDemo> {
 
   void _play() {
     _replayTimer?.cancel();
-    setState(() => _active = true);
+    final original = _active;
+    setState(() => _active = !original);
     _replayTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted) return;
-      setState(() => _active = false);
+      setState(() => _active = original);
     });
   }
 
@@ -437,12 +438,10 @@ class _PaymentDemoState extends State<_PaymentDemo> with SingleTickerProviderSta
     });
   }
 
-  // One send, then (after it lands) one return.
+  // One full out-and-back cycle from the current state.
   void _play() {
-    _replayTimer?.cancel();
-    _pending?.cancel();
-    _pending = null;
-    if (_sent) setState(() => _sent = false);
+    // Ignore while a transition or a replay cycle is in flight (same as the tap debounce).
+    if ((_pending?.isActive ?? false) || (_replayTimer?.isActive ?? false)) return;
     _toggle();
     _replayTimer = Timer(_streaks.duration! * 0.6 + const Duration(milliseconds: 900), _toggle);
   }
