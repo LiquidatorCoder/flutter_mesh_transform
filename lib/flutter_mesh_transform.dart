@@ -112,6 +112,12 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
         debugPrint('MeshTransform: failed to load shader "$asset": $error');
         return true;
       }());
+      // The failed request is still the current one: don't keep rendering with the previous asset's shader.
+      if (mounted && widget.shaderAsset == asset && _shader != null) {
+        final previous = _shader;
+        setState(() => _shader = null);
+        previous?.dispose();
+      }
     }
   }
 
