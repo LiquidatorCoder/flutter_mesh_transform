@@ -33,3 +33,34 @@ jobs:
         run: flutter build bundle
       - name: Publish dry-run
         run: flutter pub publish --dry-run
+
+  ios-e2e:
+    name: iOS simulator e2e (shader path + perf)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Boot an iPhone simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for r,v in sorted(d.items(), reverse=True) if 'iOS' in r for x in v if x['name'].startswith('iPhone')))")
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Run e2e suite on the simulator
+        working-directory: example
+        run: >
+          flutter drive -d ${{ steps.sim.outputs.udid }}
+          --driver=test_driver/integration_test.dart
+          --target=integration_test/mesh_transform_e2e_test.dart
+      - name: Upload perf report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-perf
+          path: example/build/e2e/
+          if-no-files-found: ignore
