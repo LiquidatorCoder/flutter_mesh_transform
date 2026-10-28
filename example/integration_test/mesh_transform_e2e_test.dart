@@ -10,6 +10,7 @@
 // time into the driver's response data (build/e2e/e2e_perf.json). Numbers from
 // a debug build on a simulator are only comparable with each other, not with a
 // profile build on hardware.
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -324,6 +325,71 @@ void main() {
     expect(offscreenLayers().where((l) => l.contains('ShaderSampler')), isEmpty);
   });
 
+  // The Dart side writes the shader's uniforms by index only, so a reordered or swapped uniform compiles, passes every
+  // structural check and silently draws the wrong warp. This renders a child whose colour encodes its own coordinates
+  // (red = x / width, green = y / height) and checks that each output pixel sampled the position distortion.frag's
+  // formula predicts for the values passed to MeshTransform.
+  testWidgets('rendered pixels follow distortion.frag for the given parameters', (tester) async {
+    const xSpread = 0.7, yFalloff = 2.0, yTravel = 0.25, size = 200.0;
+    final boundary = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: RepaintBoundary(
+            key: boundary,
+            child: const MeshTransform(
+              active: true,
+              maxBlur: 0,
+              padding: EdgeInsets.zero,
+              xSpread: xSpread,
+              yFalloff: yFalloff,
+              yTravel: yTravel,
+              child: SizedBox.square(
+                dimension: size,
+                child: CustomPaint(painter: _CoordinatePainter()),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    final render = boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await render.toImage();
+    final bytes = (await image.toByteData())!;
+    expect(image.width, size.toInt());
+
+    var checked = 0;
+    var worst = 0.0;
+    for (var gy = 0; gy < 12; gy++) {
+      for (var gx = 0; gx < 12; gx++) {
+        final px = 8 + gx * 16, py = 8 + gy * 16;
+        // distortion.frag at uProgress = 1, in the widget's own coordinates.
+        final x = px + 0.5, y = py + 0.5;
+        final nx = x / size, ny = y / size;
+        var xOffset = (nx - 0.5) * 2 * xSpread;
+        xOffset *= math.pow(math.max(1.0 - ny, 0.0), yFalloff);
+        final u = (x + xOffset * size) / size, v = (y + size * yTravel) / size;
+
+        final i = (py * image.width + px) * 4;
+        final r = bytes.getUint8(i) / 255, g = bytes.getUint8(i + 1) / 255, a = bytes.getUint8(i + 3) / 255;
+        if (u < -0.02 || u > 1.02 || v < -0.02 || v > 1.02) {
+          expect(a, lessThan(0.05), reason: 'pixel ($px, $py) samples outside the child and must be transparent');
+        } else if (u > 0.04 && u < 0.96 && v > 0.04 && v < 0.96) {
+          worst = math.max(worst, math.max((r - u).abs(), (g - v).abs()));
+          checked++;
+        }
+      }
+    }
+    report['shader_pixel_check'] = {'points': checked, 'worst_error': worst};
+    debugPrint('E2E_PERF shader_pixel_check points=$checked worst=$worst');
+    expect(checked, greaterThan(40));
+    expect(worst, lessThan(0.04), reason: 'the warp does not match distortion.frag for these uniforms');
+  });
+
   testWidgets('child state survives a full warp cycle with the shader loaded', (tester) async {
     var inits = 0;
     Widget app(bool active) => MaterialApp(
@@ -363,4 +429,31 @@ class _InitCounterState extends State<_InitCounter> {
 
   @override
   Widget build(BuildContext context) => const SizedBox(width: 200, height: 200, child: ColoredBox(color: Colors.teal));
+}
+
+/// Paints red = x / width and green = y / height, so a pixel's colour says where in the child it came from.
+class _CoordinatePainter extends CustomPainter {
+  const _CoordinatePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.drawRect(
+      rect,
+      Paint()..shader = const LinearGradient(colors: [Color(0xFF000000), Color(0xFFFF0000)]).createShader(rect),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..blendMode = BlendMode.plus
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF000000), Color(0xFF00FF00)],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CoordinatePainter oldDelegate) => false;
 }
