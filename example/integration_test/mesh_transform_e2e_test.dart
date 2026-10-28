@@ -260,6 +260,24 @@ void main() {
     expect(reset.dampingRatio, before.dampingRatio);
   });
 
+  testWidgets('controls: replay from the warped state plays back and out again', (tester) async {
+    await tester.pumpWidget(const MeshTransformApp());
+    await tester.pumpAndSettle();
+    final card = find.text('Abhay Maurya');
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(meshAround(tester, card).active, isTrue);
+
+    await tester.tap(find.byIcon(Icons.tune));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('replay')));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(meshAround(tester, card).active, isFalse, reason: 'replay starts by leaving the current state');
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(meshAround(tester, card).active, isTrue, reason: 'replay ends back in the state it started from');
+  });
+
   testWidgets('scroll: a list of resting instances costs no offscreen passes', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
