@@ -54,34 +54,47 @@ class _MeshTransformHome extends StatefulWidget {
 
 class _MeshTransformHomeState extends State<_MeshTransformHome> {
   WarpSettings _settings = const WarpSettings();
+  final ValueNotifier<int> _replay = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _replay.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return DefaultTabController(
       length: 3,
       child: Scaffold(
+        extendBody: true,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: TabBarView(
           physics: const NeverScrollableScrollPhysics(),
           children: [
-            _CardDemo(settings: _settings),
-            _PaymentDemo(settings: _settings),
-            _GridDemo(settings: _settings),
+            _CardDemo(settings: _settings, replay: _replay),
+            _PaymentDemo(settings: _settings, replay: _replay),
+            _GridDemo(settings: _settings, replay: _replay),
           ],
         ),
         floatingActionButton: FloatingActionButton(onPressed: _openControls, child: const Icon(Icons.tune)),
         bottomNavigationBar: Material(
           color: Colors.transparent,
-          child: TabBar(
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Colors.white12,
-            dividerColor: Colors.transparent,
-            indicatorColor: Colors.black,
-            tabs: [
-              Tab(text: 'card'),
-              Tab(text: 'pay'),
-              Tab(text: 'grid'),
-            ],
+          child: SafeArea(
+            top: false,
+            child: TabBar(
+              labelColor: scheme.primary,
+              unselectedLabelColor: scheme.onSurface.withValues(alpha: 0.6),
+              dividerColor: Colors.transparent,
+              indicatorColor: scheme.primary,
+              indicatorSize: TabBarIndicatorSize.label,
+              tabs: const [
+                Tab(text: 'card'),
+                Tab(text: 'pay'),
+                Tab(text: 'grid'),
+              ],
+            ),
           ),
         ),
       ),
@@ -92,6 +105,8 @@ class _MeshTransformHomeState extends State<_MeshTransformHome> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black26,
+      isScrollControlled: true,
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
@@ -100,7 +115,12 @@ class _MeshTransformHomeState extends State<_MeshTransformHome> {
               setState(() => _settings = next);
             }
 
-            return _ControlsSheet(settings: _settings, onChanged: apply);
+            return _ControlsSheet(
+              settings: _settings,
+              onChanged: apply,
+              onReplay: () => _replay.value++,
+              onReset: () => apply(const WarpSettings()),
+            );
           },
         );
       },
@@ -109,10 +129,17 @@ class _MeshTransformHomeState extends State<_MeshTransformHome> {
 }
 
 class _ControlsSheet extends StatelessWidget {
-  const _ControlsSheet({required this.settings, required this.onChanged});
+  const _ControlsSheet({
+    required this.settings,
+    required this.onChanged,
+    required this.onReplay,
+    required this.onReset,
+  });
 
   final WarpSettings settings;
   final ValueChanged<WarpSettings> onChanged;
+  final VoidCallback onReplay;
+  final VoidCallback onReset;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +152,28 @@ class _ControlsSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('replay'),
+                  onPressed: onReplay,
+                  icon: const Icon(Icons.replay),
+                  label: const Text('replay'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const Key('reset'),
+                  onPressed: onReset,
+                  icon: const Icon(Icons.restart_alt),
+                  label: const Text('reset'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           const Text(
             'warp shape',
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Colors.white70),
@@ -170,8 +219,9 @@ class _ControlsSheet extends StatelessWidget {
 // ─── Tab 1: card ──────────────────────────────────────────────────────
 
 class _CardDemo extends StatefulWidget {
-  const _CardDemo({required this.settings});
+  const _CardDemo({required this.settings, required this.replay});
   final WarpSettings settings;
+  final ValueNotifier<int> replay;
 
   @override
   State<_CardDemo> createState() => _CardDemoState();
@@ -179,13 +229,48 @@ class _CardDemo extends StatefulWidget {
 
 class _CardDemoState extends State<_CardDemo> {
   bool _active = false;
+  Timer? _replayTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.replay.addListener(_play);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CardDemo old) {
+    super.didUpdateWidget(old);
+    if (old.replay != widget.replay) {
+      old.replay.removeListener(_play);
+      widget.replay.addListener(_play);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.replay.removeListener(_play);
+    _replayTimer?.cancel();
+    super.dispose();
+  }
+
+  void _play() {
+    _replayTimer?.cancel();
+    setState(() => _active = true);
+    _replayTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() => _active = false);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _active = !_active),
+      onTap: () {
+        _replayTimer?.cancel();
+        setState(() => _active = !_active);
+      },
       child: Align(
         alignment: Alignment.topCenter,
         child: MeshTransform(
@@ -296,8 +381,9 @@ class _CardArtPainter extends CustomPainter {
 // ─── Tab 2: payment send ──────────────────────────────────────────────
 
 class _PaymentDemo extends StatefulWidget {
-  const _PaymentDemo({required this.settings});
+  const _PaymentDemo({required this.settings, required this.replay});
   final WarpSettings settings;
+  final ValueNotifier<int> replay;
 
   @override
   State<_PaymentDemo> createState() => _PaymentDemoState();
@@ -308,6 +394,8 @@ class _PaymentDemoState extends State<_PaymentDemo> with SingleTickerProviderSta
   bool _streaksReverse = false;
   late final AnimationController _streaks;
   late final List<_Streak> _streakSeeds;
+  Timer? _pending;
+  Timer? _replayTimer;
 
   static const _cashGreen = Color(0xFFB5F265);
 
@@ -316,22 +404,47 @@ class _PaymentDemoState extends State<_PaymentDemo> with SingleTickerProviderSta
     super.initState();
     _streaks = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
     _streakSeeds = List.generate(18, (i) => _Streak.seed(i));
+    widget.replay.addListener(_play);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PaymentDemo old) {
+    super.didUpdateWidget(old);
+    if (old.replay != widget.replay) {
+      old.replay.removeListener(_play);
+      widget.replay.addListener(_play);
+    }
   }
 
   @override
   void dispose() {
+    widget.replay.removeListener(_play);
+    _pending?.cancel();
+    _replayTimer?.cancel();
     _streaks.dispose();
     super.dispose();
   }
 
   void _toggle() {
+    // Ignore taps while a transition is pending: a double tap acts as one tap.
+    if (_pending?.isActive ?? false) return;
     _streaksReverse = _sent; // tapping while sent → card returns, streaks fall
     _streaks.forward(from: 0);
     final delay = _streaks.duration! * 0.6;
-    Future.delayed(delay, () {
+    _pending = Timer(delay, () {
       if (!mounted) return;
       setState(() => _sent = !_sent);
     });
+  }
+
+  // One send, then (after it lands) one return.
+  void _play() {
+    _replayTimer?.cancel();
+    _pending?.cancel();
+    _pending = null;
+    if (_sent) setState(() => _sent = false);
+    _toggle();
+    _replayTimer = Timer(_streaks.duration! * 0.6 + const Duration(milliseconds: 900), _toggle);
   }
 
   @override
@@ -501,8 +614,9 @@ class _StreakPainter extends CustomPainter {
 // ─── Tab 3: grid of independent instances ─────────────────────────────
 
 class _GridDemo extends StatefulWidget {
-  const _GridDemo({required this.settings});
+  const _GridDemo({required this.settings, required this.replay});
   final WarpSettings settings;
+  final ValueNotifier<int> replay;
 
   @override
   State<_GridDemo> createState() => _GridDemoState();
@@ -525,7 +639,23 @@ class _GridDemoState extends State<_GridDemo> {
   static const _hold = Duration(milliseconds: 1200);
 
   @override
+  void initState() {
+    super.initState();
+    widget.replay.addListener(_playStagger);
+  }
+
+  @override
+  void didUpdateWidget(covariant _GridDemo old) {
+    super.didUpdateWidget(old);
+    if (old.replay != widget.replay) {
+      old.replay.removeListener(_playStagger);
+      widget.replay.addListener(_playStagger);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.replay.removeListener(_playStagger);
     for (final t in _timers) {
       t.cancel();
     }
