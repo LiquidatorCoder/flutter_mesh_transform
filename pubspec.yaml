@@ -1,6 +1,6 @@
 name: flutter_mesh_transform
 description: A drop-in mesh distortion / warp effect for any Flutter widget, driven by a spring simulation and a fragment shader.
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/LiquidatorCoder/flutter_mesh_transform
 repository: https://github.com/LiquidatorCoder/flutter_mesh_transform
 issue_tracker: https://github.com/LiquidatorCoder/flutter_mesh_transform/issues

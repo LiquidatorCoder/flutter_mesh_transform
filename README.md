@@ -22,7 +22,7 @@ Driven by a spring simulation and a fragment shader — flip a <code>bool</code>
 
 ```yaml
 dependencies:
-  flutter_mesh_transform: ^0.1.0
+  flutter_mesh_transform: ^0.1.2
 ```
 
 ```dart

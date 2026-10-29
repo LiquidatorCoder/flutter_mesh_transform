@@ -6,7 +6,7 @@ exist yet, this file says so rather than inventing one.
 
 ## What this repo is
 
-`flutter_mesh_transform` — a Flutter package published to pub.dev (version `0.1.1`,
+`flutter_mesh_transform` — a Flutter package published to pub.dev (version `0.1.2`,
 `homepage`/`repository`: `github.com/LiquidatorCoder/flutter_mesh_transform`).
 
 It provides **one widget**: `MeshTransform`, which warps any child with a mesh
