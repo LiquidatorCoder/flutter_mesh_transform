@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_shaders/flutter_shaders.dart';
 
+const String _bundledShaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag';
+
 /// A drop-in mesh distortion / warp effect for any Flutter widget.
 ///
 /// Wrap any [child] with [MeshTransform] and flip [active] to animate the
@@ -30,7 +32,7 @@ class MeshTransform extends StatefulWidget {
     this.dampingRatio = 0.75,
     this.maxBlur = 20.0,
     this.padding = const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-    this.shaderAsset = 'packages/flutter_mesh_transform/shaders/distortion.frag',
+    this.shaderAsset = _bundledShaderAsset,
   });
 
   /// When this flips, the warp animates between 0 (off) and 1 (fully warped).
@@ -48,10 +50,11 @@ class MeshTransform extends StatefulWidget {
   /// Vertical displacement at peak warp.
   final double yTravel;
 
-  /// Spring response in seconds. Lower values are snappier.
+  /// Spring response in seconds. Lower values are snappier. Takes effect on the next change of [active].
   final double response;
 
-  /// Spring damping ratio. 1.0 is critical damping; below 1.0 overshoots.
+  /// Spring damping ratio. 1.0 is critical damping; below 1.0 overshoots. Takes effect on the next change
+  /// of [active].
   final double dampingRatio;
 
   /// Peak blur sigma applied at `active == true`. Set to `0` to disable blur.
@@ -62,7 +65,7 @@ class MeshTransform extends StatefulWidget {
   final EdgeInsets padding;
 
   /// Asset path of the fragment shader to use. Defaults to the bundled
-  /// distortion shader.
+  /// distortion shader. The idle and fully-warped-hide optimizations apply only to the bundled shader.
   final String shaderAsset;
 
   @override
@@ -72,6 +75,7 @@ class MeshTransform extends StatefulWidget {
 class _MeshTransformState extends State<MeshTransform> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   ui.FragmentShader? _shader;
+  final Paint _paint = Paint();
 
   static final Map<String, Future<ui.FragmentProgram>> _programCache = {};
 
@@ -87,23 +91,35 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
     super.didUpdateWidget(oldWidget);
     if (widget.active != oldWidget.active) {
       _animateTo(widget.active ? 1 : 0);
-    } else if (widget.shaderAsset != oldWidget.shaderAsset) {
+    }
+    if (widget.shaderAsset != oldWidget.shaderAsset) {
       _loadShader();
     }
   }
 
   Future<void> _loadShader() async {
+    final asset = widget.shaderAsset;
     try {
-      final program = await _programCache.putIfAbsent(
-        widget.shaderAsset,
-        () => ui.FragmentProgram.fromAsset(widget.shaderAsset),
-      );
-      if (!mounted) return;
+      final program = await _programCache.putIfAbsent(asset, () => ui.FragmentProgram.fromAsset(asset));
+      // A newer shaderAsset superseded this request while it was loading.
+      if (!mounted || widget.shaderAsset != asset) return;
+      final previous = _shader;
       setState(() => _shader = program.fragmentShader());
-    } catch (_) {
+      previous?.dispose();
+    } catch (error) {
       // Shader asset missing or failed to compile — fall through and render
       // the child without distortion rather than crashing the host app.
-      _programCache.remove(widget.shaderAsset);
+      _programCache.remove(asset);
+      assert(() {
+        debugPrint('MeshTransform: failed to load shader "$asset": $error');
+        return true;
+      }());
+      // The failed request is still the current one: don't keep rendering with the previous asset's shader.
+      if (mounted && widget.shaderAsset == asset && _shader != null) {
+        final previous = _shader;
+        setState(() => _shader = null);
+        previous?.dispose();
+      }
     }
   }
 
@@ -111,12 +127,17 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
     final stiffness = math.pow(2 * math.pi / widget.response, 2).toDouble();
     final damping = 4 * math.pi * widget.dampingRatio / widget.response;
     final spring = SpringDescription(mass: 1, stiffness: stiffness, damping: damping);
-    _controller.animateWith(SpringSimulation(spring, _controller.value, target, _controller.velocity));
+    // `then` fires only on natural completion, not when a newer animateWith supersedes this one. The spring ends
+    // within its tolerance of the target, so snap exactly (SpringSimulation.snapToEnd needs Flutter 3.29+).
+    _controller.animateWith(SpringSimulation(spring, _controller.value, target, _controller.velocity)).then((_) {
+      if (mounted && !_controller.isAnimating) _controller.value = target;
+    });
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _shader?.dispose();
     super.dispose();
   }
 
@@ -129,34 +150,41 @@ class _MeshTransformState extends State<MeshTransform> with SingleTickerProvider
         final t = _controller.value;
         final shader = _shader;
 
-        Widget content = child!;
+        // Both shortcuts assume the bundled shader (identity at t == 0, distortion.frag's vertical sampling).
+        final bundled = widget.shaderAsset == _bundledShaderAsset;
+        final atRest = bundled && t == 0;
+        // Without a shader the fallback is the blurred, undistorted child, which is never fully hidden.
+        final hidden = bundled && shader != null && _isFullyWarpedAway(t, widget.yTravel);
+        final blur = atRest || hidden ? 0.0 : (t * widget.maxBlur).clamp(0.0, double.infinity);
 
-        if (shader != null) {
-          content = AnimatedSampler((image, size, canvas) {
-            shader
-              ..setFloat(0, size.width)
-              ..setFloat(1, size.height)
-              ..setFloat(2, t)
-              ..setFloat(3, widget.xSpread)
-              ..setFloat(4, widget.yFalloff)
-              ..setFloat(5, widget.yTravel)
-              ..setImageSampler(0, image);
-            canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
-          }, child: content);
-        }
-
-        if (widget.maxBlur > 0) {
-          final blur = (t * widget.maxBlur).clamp(0.0, double.infinity);
-          if (blur > 0) {
-            content = ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-              child: content,
-            );
-          }
-        }
-
-        return content;
+        // The wrapper structure is identical every frame (only the flags change) so the child's element subtree and
+        // State are never rebuilt. Opacity 0 skips painting but keeps hit-testing, as the invisible child had before.
+        return Opacity(
+          opacity: hidden ? 0 : 1,
+          child: ImageFiltered(
+            enabled: blur > 0,
+            imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+            child: AnimatedSampler(enabled: shader != null && !atRest && !hidden, (image, size, canvas) {
+              if (shader == null) return;
+              shader
+                ..setFloat(0, size.width)
+                ..setFloat(1, size.height)
+                ..setFloat(2, t)
+                ..setFloat(3, widget.xSpread)
+                ..setFloat(4, widget.yFalloff)
+                ..setFloat(5, widget.yTravel)
+                ..setImageSampler(0, image);
+              canvas.drawRect(Offset.zero & size, _paint..shader = shader);
+            }, child: child!),
+          ),
+        );
       },
     );
   }
 }
+
+/// True when every fragment of shaders/distortion.frag samples outside [0, 1] and outputs transparent.
+///
+/// The shader samples `uv.y = (pos.y + H * yTravel * t) / H` with `pos.y / H` in [0, 1], so once
+/// `|yTravel * t| > 1` no sample can land inside the texture. Keep in sync with distortion.frag.
+bool _isFullyWarpedAway(double t, double yTravel) => (yTravel * t).abs() > 1.0;

@@ -105,8 +105,18 @@ So the failure mode here is *silent wrong rendering*, not a crash or a red test.
 **not** catch a swapped value — `setFloat(3, yFalloff); setFloat(4, xSpread)` passes it
 and renders wrong.
 
+The on-device e2e suite (`example/integration_test`, also run by CI on an iOS simulator) does:
+its "rendered pixels follow distortion.frag" test renders a child whose colour encodes its own
+coordinates and compares each output pixel with the shader's formula. That exact swap fails it
+(worst error 0.95 vs. 0.008 when correct). Run it with:
+
+```bash
+cd example && flutter drive -d <simulator> --driver=test_driver/integration_test.dart \
+  --target=integration_test/mesh_transform_e2e_test.dart
+```
+
 **Therefore: any change to the shader or to the uniform-writing code must be confirmed
-by actually running `example/` and looking at it.** Say so in the task's plan. Do not
+by the e2e suite on a device and by actually running `example/` and looking at it.** Say so in the task's plan. Do not
 report a shader change as verified on the strength of a green suite.
 
 ## Other things to know before changing code
