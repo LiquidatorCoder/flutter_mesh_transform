@@ -22,3 +22,12 @@ example/ios/Pods/
 example/ios/.symlinks/
 example/macos/Pods/
 example/android/.gradle/
+
+# Repository tooling — agent harness, CI and contributor docs are not part of
+# the published package.
+.claude/
+.github/
+docs/
+tool/
+AGENTS.md
+CLAUDE.md

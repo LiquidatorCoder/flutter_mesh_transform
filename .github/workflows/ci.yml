@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: format · analyze · test · shader compile · publish dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Analyze (package + example)
+        run: flutter analyze
+      - name: Widget tests
+        run: flutter test
+      - name: Compile shader (example bundle)
+        working-directory: example
+        run: flutter build bundle
+      - name: Publish dry-run
+        run: flutter pub publish --dry-run

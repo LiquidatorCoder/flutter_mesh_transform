@@ -39,7 +39,9 @@ decision to make with the user, not a convention to assume.
 
 Recorded so nobody wires work to something that does not exist:
 
-- **No CI** — there is no `.github/`, no workflow files, nothing running on push.
+- **CI is one workflow**, `.github/workflows/ci.yml`: on every PR and push to `main` it runs
+  format, analyze, test, the example shader compile and `pub publish --dry-run` — the same
+  commands as below. It is not a substitute for looking at the shader on a device.
 - **No Makefile and no script runner.** Every command below is invoked directly.
 - **No code generation** — no `build_runner`, no generated files, no codegen step.
 - **No native code of its own.** The `ios/`, `android/` and `macos/` directories belong
@@ -136,10 +138,9 @@ report a shader change as verified on the strength of a green suite.
 
 ## Baseline state (as of the harness bootstrap)
 
-- `dart format --set-exit-if-changed .` **FAILS** on all three pre-existing Dart files.
-  This is a recorded baseline failure. The harness did not introduce it and deliberately
-  did not fix it — reformatting is a deliberate change someone should make on purpose,
-  not a side effect of installing tooling.
+- `dart format --set-exit-if-changed .` passes. The code base is written at 120 columns,
+  so `analysis_options.yaml` sets `formatter: page_width: 120`; before that was configured
+  the format check failed on all three Dart files.
 - `flutter analyze` passes. `flutter test` passes (2 tests). `flutter build bundle` in
   `example/` passes. `flutter pub publish --dry-run` passes with 0 warnings.
 

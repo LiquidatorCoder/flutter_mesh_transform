@@ -29,7 +29,7 @@ repo:
     lints: flutter_lints ^6.0.0         # via analysis_options.yaml
   absent:
     # Recorded so nobody wires a verifier check to something that does not exist here.
-    - no CI workflows (.github/ does not exist)
+    # CI: .github/workflows/ci.yml runs format/analyze/test/shader_compile/publish dry-run.
     - no Makefile, no script runner
     - no code generation (no build_runner, no generated files)
     - no native platform code owned by the package

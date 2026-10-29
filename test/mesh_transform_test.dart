@@ -6,33 +6,23 @@ void main() {
   testWidgets('MeshTransform renders its child', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: MeshTransform(
-            active: false,
-            child: Text('hello'),
-          ),
-        ),
+        home: Scaffold(body: MeshTransform(active: false, child: Text('hello'))),
       ),
     );
 
     expect(find.text('hello'), findsOneWidget);
   });
 
-  testWidgets('MeshTransform accepts active toggling without throwing',
-      (tester) async {
+  testWidgets('MeshTransform accepts active toggling without throwing', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: MeshTransform(active: false, child: Text('x')),
-        ),
+        home: Scaffold(body: MeshTransform(active: false, child: Text('x'))),
       ),
     );
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: MeshTransform(active: true, child: Text('x')),
-        ),
+        home: Scaffold(body: MeshTransform(active: true, child: Text('x'))),
       ),
     );
 
