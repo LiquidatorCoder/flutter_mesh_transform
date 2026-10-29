@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - Fix: the child's `State` is no longer recreated every time `active` changes (the blur and shader wrappers used to be
   inserted and removed, rebuilding the subtree).
