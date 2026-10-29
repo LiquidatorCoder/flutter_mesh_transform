@@ -157,7 +157,7 @@ void main() {
     expect(layers, isEmpty, reason: 'a resting MeshTransform should paint its child directly');
   });
 
-  testWidgets('pay: send and return', (tester) async {
+  testWidgets('pay: send and return, and a double tap toggles once', (tester) async {
     await tester.pumpWidget(const MeshTransformApp());
     await tester.pumpAndSettle();
     await tester.tap(find.text('pay'));
@@ -174,6 +174,27 @@ void main() {
       settleAtLeast: const Duration(milliseconds: 1300),
     );
     expect(meshAround(tester, amount).active, isFalse);
+
+    // A second tap while the send is still pending must not cancel it.
+    await tester.tap(amount);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await tester.tap(amount, warnIfMissed: false);
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    final afterDoubleTap = meshAround(tester, amount).active;
+    report['pay_double_tap_sent'] = afterDoubleTap;
+    expect(afterDoubleTap, isTrue, reason: 'a double tap should behave like one tap');
+  });
+
+  testWidgets('tab bar stays clear of the home indicator', (tester) async {
+    await tester.pumpWidget(const MeshTransformApp());
+    await tester.pumpAndSettle();
+    final view = tester.view;
+    final screenBottom = view.physicalSize.height / view.devicePixelRatio;
+    final safeBottom = view.padding.bottom / view.devicePixelRatio;
+    final tabBar = tester.getRect(find.byType(TabBar));
+    report['tab_bar_bottom_gap'] = screenBottom - tabBar.bottom;
+    expect(tabBar.bottom, lessThanOrEqualTo(screenBottom - safeBottom + 0.5));
   });
 
   testWidgets('grid: staggered warp across six instances', (tester) async {
@@ -203,6 +224,10 @@ void main() {
     await tester.pumpAndSettle();
     final sliders = find.byType(Slider);
     expect(sliders, findsNWidgets(5));
+    final view = tester.view;
+    final visibleBottom = (view.physicalSize.height - view.padding.bottom) / view.devicePixelRatio;
+    report['sheet_last_slider_bottom_gap'] = visibleBottom - tester.getRect(sliders.last).bottom;
+    expect(tester.getRect(sliders.last).bottom, lessThanOrEqualTo(visibleBottom), reason: 'the sheet must not clip');
     for (var i = 0; i < 5; i++) {
       await tester.drag(sliders.at(i), const Offset(-40, 0));
       await tester.pump();
@@ -215,6 +240,42 @@ void main() {
     expect(after.yTravel, isNot(before.yTravel));
     expect(after.response, isNot(before.response));
     expect(after.dampingRatio, isNot(before.dampingRatio));
+
+    // Replay runs the visible demo while the sheet stays open, and reset restores the defaults.
+    await tester.tap(find.byKey(const Key('replay')));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(meshAround(tester, find.text('Abhay Maurya')).active, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(meshAround(tester, find.text('Abhay Maurya')).active, isFalse);
+    expect(find.byType(Slider), findsNWidgets(5), reason: 'replay must not close the sheet');
+
+    await tester.tap(find.byKey(const Key('reset')));
+    await tester.pumpAndSettle();
+    final reset = meshAround(tester, find.text('Abhay Maurya'));
+    expect(reset.xSpread, before.xSpread);
+    expect(reset.yFalloff, before.yFalloff);
+    expect(reset.yTravel, before.yTravel);
+    expect(reset.response, before.response);
+    expect(reset.dampingRatio, before.dampingRatio);
+  });
+
+  testWidgets('controls: replay from the warped state plays back and out again', (tester) async {
+    await tester.pumpWidget(const MeshTransformApp());
+    await tester.pumpAndSettle();
+    final card = find.text('Abhay Maurya');
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(meshAround(tester, card).active, isTrue);
+
+    await tester.tap(find.byIcon(Icons.tune));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('replay')));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(meshAround(tester, card).active, isFalse, reason: 'replay starts by leaving the current state');
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+    expect(meshAround(tester, card).active, isTrue, reason: 'replay ends back in the state it started from');
   });
 
   testWidgets('scroll: a list of resting instances costs no offscreen passes', (tester) async {
