@@ -34,7 +34,13 @@ MeshTransform(
 );
 ```
 
-The widget owns its spring controller and caches the compiled shader program across instances, so it's safe to mount many of them.
+The widget owns its spring controller and caches the compiled shader program across instances, so it's safe to mount many of them:
+
+- **At rest it costs nothing extra.** A resting `MeshTransform` paints its child directly — no offscreen pass, no
+  snapshot texture — and once the warp has carried every pixel out of bounds it stops drawing (the child still
+  receives taps, as before).
+- **The child keeps its state.** Warping in and out never rebuilds the child, so text fields, scroll positions and
+  running animations survive.
 
 ## 🎚️ API
 
@@ -51,14 +57,15 @@ The widget owns its spring controller and caches the compiled shader program acr
 | `dampingRatio` | `0.75`                                                 | Spring damping. 1.0 = critical.                                        |
 | `maxBlur`      | `20.0`                                                 | Peak blur sigma at `active = true`. Set to `0` to disable.             |
 | `padding`      | `EdgeInsets.symmetric(vertical: 40, horizontal: 24)`   | Empty space around the child captured by the shader so it doesn't clip. |
+| `shaderAsset`  | `'packages/flutter_mesh_transform/shaders/distortion.frag'` | Fragment shader to use. The at-rest and fully-warped shortcuts apply only to the bundled shader. |
 
 ## 📱 Platforms
 
-Tested on **Android** and **iOS**. Should work anywhere Flutter's fragment shader pipeline is supported, but other platforms are unverified.
+Tested on **Android** and **iOS**; every change is checked by an on-device end-to-end suite on an iOS simulator in CI. Should work anywhere Flutter's fragment shader pipeline is supported, but other platforms are unverified.
 
 ## 🚀 Example
 
-A runnable demo app with interactive sliders for every parameter lives in [`example/`](example/):
+A runnable demo app with interactive sliders for every parameter — plus **replay** and **reset** — lives in [`example/`](example/):
 
 ```bash
 cd example
