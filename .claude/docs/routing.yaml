@@ -155,7 +155,7 @@ classification:
 # the only two ways this package affects anyone outside the checkout.
 review:
   default_mode: none
-  reviewer_model: gpt-5.6-sol          # pinned in tool/harness/review
+  reviewer: global  # named by the active global harness policy (~/.claude/harness/current/policies/global.md)
   paths:
     - match: "shaders/**"
       mode: standard
