@@ -133,11 +133,11 @@ fingerprinted normally.
 
 Optional here, and required only on the shader-contract and release paths (`shaders/**`,
 `lib/flutter_mesh_transform.dart`, `pubspec.yaml`, `LICENSE`) — see `review:` in
-`.claude/docs/routing.yaml`. The reviewer model is pinned to `gpt-5.6-sol` in
-`tool/harness/review`.
+`.claude/docs/routing.yaml`. Independent review is performed by the reviewer configured in the active global harness policy
+(`~/.claude/harness/current/policies/global.md`); this repo only sets risk floors.
 
-`tool/harness/review run` never writes a passing review it did not obtain: if the Codex
-CLI is absent, unauthenticated, on the wrong model, or fails mid-run, it writes an
+`tool/harness/review run` never writes a passing review it did not obtain: if the reviewer
+is unavailable or fails mid-run, it writes an
 `incomplete` review.json carrying the reason, which blocks completion.
 
 ## What the harness will not do
